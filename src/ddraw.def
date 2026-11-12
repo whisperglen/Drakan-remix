@@ -1,0 +1,20 @@
+LIBRARY ddraw
+; Only the 15 exports that BOTH dgVoodoo2's DDraw.dll and the Windows ddraw.dll provide.
+; Exporting more (e.g. SetAppCompatData) made UCyborg's dinput.dll find and call a function
+; the chained dgVoodoo doesn't have (2026-11-12: game died before creating its window).
+EXPORTS
+    AcquireDDThreadLock          = s_AcquireDDThreadLock          @1
+    CompleteCreateSysmemSurface  = s_CompleteCreateSysmemSurface  @2
+    D3DParseUnknownCommand       = s_D3DParseUnknownCommand       @3
+    DDInternalLock               = s_DDInternalLock               @4
+    DDInternalUnlock             = s_DDInternalUnlock             @5
+    DirectDrawCreate             = s_DirectDrawCreate             @6
+    DirectDrawCreateClipper      = s_DirectDrawCreateClipper      @7
+    DirectDrawCreateEx           = s_DirectDrawCreateEx           @8
+    DirectDrawEnumerateA         = s_DirectDrawEnumerateA         @9
+    DirectDrawEnumerateExA       = s_DirectDrawEnumerateExA       @10
+    DirectDrawEnumerateExW       = s_DirectDrawEnumerateExW       @11
+    DirectDrawEnumerateW         = s_DirectDrawEnumerateW         @12
+    DllCanUnloadNow              = s_DllCanUnloadNow              PRIVATE
+    DllGetClassObject            = s_DllGetClassObject            PRIVATE
+    ReleaseDDThreadLock          = s_ReleaseDDThreadLock          @15
