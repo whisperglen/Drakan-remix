@@ -26,6 +26,7 @@
 #define G_VBUF_PTR     0x004885A8   /* transformed-vertex buffer (stride 0x38)             */
 #define G_WORLD        0x00484348   /* world / level object                                */
 #define G_VIEWCELLS    0x00487C58   /* view range in terrain cells                         */
+#define A_LOADLEVEL    0x00438060   /* int __cdecl load_level(char *file, uint flags) 0=ok */
 #define EXE_CHECKSUM   0x00089E91
 
 #define F(p, off)  (*(float *)((BYTE *)(p) + (off)))
@@ -36,6 +37,8 @@ typedef void (__cdecl    *frame_fn)(void);
 typedef int  (__fastcall *xform_fn)(void *obj, void *edx, int zero);
 typedef int  (__fastcall *fan_fn)(void *r, void *edx, BYTE **v, int n, void *tex);
 
+typedef int  (__cdecl    *loadlevel_fn)(char *file, unsigned flags);
+static loadlevel_fn O_loadlevel;
 static frame_fn O_frame;
 static xform_fn O_xform;
 static fan_fn   O_fan1, O_fan4, O_fanq;
@@ -277,6 +280,79 @@ FAN_HOOK(H_fan1, 0, O_fan1)
 FAN_HOOK(H_fan4, 1, O_fan4)
 FAN_HOOK(H_fanq, 2, O_fanq)
 
+/* ---- terrain dump at level load (F-017, level loader 0x438060 / layer reader 0x422420) ----
+ * File format "DKLV" v1, little-endian, all game structures copied raw:
+ *   char magic[4] "DKLV"; u32 version (1); char level_file[260];
+ *   u32 world_w_cells; u32 world_h_cells; u32 sector_count;
+ *   u8  world_texture_table_header[0x18]  (world+0x2838 .. +0x2850, for later);
+ *   u8  materials[256][0x28]              (world+0x38);
+ *   per sector: u32 index; u8 sector[0xA8]; u32 w; u32 h;
+ *               u8 cells[w*h][0x16]; u8 verts[(w+1)*(h+1)][10];
+ *               u32 pvs_count; u16 pvs[pvs_count]
+ */
+static int g_dump_seq;
+
+static void wr(HANDLE f, const void *p, DWORD n) { DWORD w; WriteFile(f, p, n, &w, NULL); }
+
+static void dump_world(const char *level_file)
+{
+    BYTE *world = (BYTE *)G_WORLD, *sectors;
+    char dir[MAX_PATH], path[MAX_PATH], name[MAX_PATH], lf[260];
+    const char *base;
+    DWORD i, count, ww, wh, ver = 1;
+    HANDLE f;
+    float hmin = 1e30f, hmax = -1e30f;
+    DWORD total_cells = 0;
+
+    GetModuleFileNameA(NULL, dir, sizeof(dir));
+    if (strrchr(dir, '\\')) strrchr(dir, '\\')[1] = 0;
+    strncat(dir, "drakan_dump", sizeof(dir) - strlen(dir) - 1);
+    CreateDirectoryA(dir, NULL);
+    base = level_file ? (strrchr(level_file, '\\') ? strrchr(level_file, '\\') + 1 : level_file) : "unknown";
+    _snprintf(name, sizeof(name), "%s", base);
+    for (i = 0; name[i]; i++) if (name[i] == '.' || name[i] == '/' || name[i] == ':') name[i] = '_';
+    _snprintf(path, sizeof(path), "%s\\level_%03d_%s.dklv", dir, ++g_dump_seq, name);
+
+    f = CreateFileA(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (f == INVALID_HANDLE_VALUE) { hook_log("[dump] cannot create %s\n", path); return; }
+    __try {
+        ww = D(world, 4); wh = D(world, 8); count = D(world, 0x14); sectors = P(world, 0xC);
+        memset(lf, 0, sizeof(lf));
+        if (level_file) strncpy(lf, level_file, sizeof(lf) - 1);
+        wr(f, "DKLV", 4); wr(f, &ver, 4); wr(f, lf, sizeof(lf));
+        wr(f, &ww, 4); wr(f, &wh, 4); wr(f, &count, 4);
+        wr(f, world + 0x2838, 0x18);
+        wr(f, world + 0x38, 256 * 0x28);
+        for (i = 0; i < count; i++) {
+            BYTE *s = sectors + i * 0xA8;
+            DWORD w = D(s, 0x18), h = D(s, 0x1C), pvs = D(s, 0x54);
+            wr(f, &i, 4); wr(f, s, 0xA8); wr(f, &w, 4); wr(f, &h, 4);
+            wr(f, P(s, 0x20), w * h * 0x16);
+            wr(f, P(s, 0x24), (w + 1) * (h + 1) * 10);
+            wr(f, &pvs, 4);
+            if (pvs) wr(f, P(s, 0x4C), pvs * 2);
+            total_cells += w * h;
+            if (F(s, 0x94) < hmin) hmin = F(s, 0x94);
+            if (F(s, 0xA0) > hmax) hmax = F(s, 0xA0);
+        }
+        hook_log("[dump] %s: world %ux%u cells, %u sectors, %u cells, height %.0f..%.0f -> %s\n",
+                 lf, ww, wh, count, total_cells, hmin, hmax, path);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        hook_log("[dump] exception while dumping the world to %s\n", path);
+    }
+    CloseHandle(f);
+    hook_log_flush();
+}
+
+static int __cdecl H_loadlevel(char *file, unsigned flags)
+{
+    int r = O_loadlevel(file, flags);
+    hook_log("[level] load_level(\"%s\", 0x%X) = %d\n", file ? file : "(null)", flags, r);
+    if (r == 0 && hook_ini_int("dump", "terrain", 1)) dump_world(file);
+    hook_log_flush();
+    return r;
+}
+
 /* ---- install ------------------------------------------------------------------------ */
 int drakan_install_hooks(void)
 {
@@ -285,6 +361,7 @@ int drakan_install_hooks(void)
     static const BYTE b_fan1[]  = { 0x55, 0x8B, 0xEC, 0x81, 0xEC, 0x10, 0x01, 0x00, 0x00 };
     static const BYTE b_fan4[]  = { 0x81, 0xEC, 0xC0, 0x01, 0x00, 0x00 };  /* sub esp,1C0 */
     static const BYTE b_fanq[]  = { 0x53, 0x55, 0x56, 0x8B, 0xF1 };        /* push ebx/ebp/esi; mov esi,ecx */
+    static const BYTE b_load[]  = { 0x6A, 0xFF, 0x68, 0xEE, 0x7A, 0x47, 0x00 }; /* push -1; push 477AEE */
     IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER *)GetModuleHandleA(NULL);
     IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS *)((BYTE *)dos + dos->e_lfanew);
     int n = 0;
@@ -308,5 +385,7 @@ int drakan_install_hooks(void)
     if ((O_fan1  = (fan_fn)detour_install(A_FAN1, b_fan1, sizeof(b_fan1), H_fan1))) n++;
     if ((O_fan4  = (fan_fn)detour_install(A_FAN4, b_fan4, sizeof(b_fan4), H_fan4))) n++;
     if ((O_fanq  = (fan_fn)detour_install(A_FANQ, b_fanq, sizeof(b_fanq), H_fanq))) n++;
+    if ((O_loadlevel = (loadlevel_fn)detour_install(A_LOADLEVEL, b_load, sizeof(b_load), H_loadlevel))) n++;
+    n += freecam_install();
     return n;
 }
