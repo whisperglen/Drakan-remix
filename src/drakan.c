@@ -393,5 +393,6 @@ int drakan_install_hooks(void)
     if ((O_fanq  = (fan_fn)detour_install(A_FANQ, b_fanq, sizeof(b_fanq), H_fanq))) n++;
     if ((O_loadlevel = (loadlevel_fn)detour_install(A_LOADLEVEL, b_load, sizeof(b_load), H_loadlevel))) n++;
     n += freecam_install();
+    n += surfspy_install();
     return n;
 }

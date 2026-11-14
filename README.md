@@ -41,6 +41,9 @@ It mostly reads game memory and writes a log. The only exception is the optional
   Keys can be changed in `[freecam]` (Windows virtual-key codes). `enable=0` turns it off.
   `move_sky=1` (default) also hooks the object draw `0x446E70`: the object that sits at the game camera's x,z
   (the sky dome, F-026) is drawn around the free camera for that call only. Its stored position is restored right after.
+- **Surface spy** (`[surfspy] enable=1`): logs each distinct caller of the game's surface wrapper `Blt` `0x439850`, `Lock` `0x439930`
+  and `Flip` `0x4398E0` (`[surf]` lines), with the surface size and type. It shows whether anything draws by writing pixels directly
+  instead of through the 3D device (R.10). Log only.
 - **Self-checks per captured frame:** recomputes the game's view-space and screen results from
   our matrix interpretation and reports the max errors. Near 0 means the findings are right.
 

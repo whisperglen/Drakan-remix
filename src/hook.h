@@ -22,3 +22,6 @@ void    texdump_world(BYTE *world, const char *dir);
 
 /* freecam.c (called from drakan_install_hooks after the host check) */
 int     freecam_install(void);
+
+/* surfspy.c: log callers of the surface wrapper Blt/Lock/Flip (who draws outside the 3D device) */
+int     surfspy_install(void);
