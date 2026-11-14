@@ -17,5 +17,8 @@ void   *detour_install(DWORD target, const BYTE *expect, int stolen, void *detou
 /* drakan.c */
 int     drakan_install_hooks(void);   /* returns number of hooks installed */
 
+/* texdump.c: write world+0x2838 textures as DDS + manifest.txt into dir */
+void    texdump_world(BYTE *world, const char *dir);
+
 /* freecam.c (called from drakan_install_hooks after the host check) */
 int     freecam_install(void);

@@ -342,6 +342,12 @@ static void dump_world(const char *level_file)
     }
     CloseHandle(f);
     hook_log_flush();
+    if (hook_ini_int("dump", "textures", 1)) {
+        char tdir[MAX_PATH];
+        _snprintf(tdir, sizeof(tdir), "%s\\level_%03d_%s_tex", dir, g_dump_seq, name);
+        tdir[sizeof(tdir) - 1] = 0;
+        texdump_world(world, tdir);
+    }
 }
 
 static int __cdecl H_loadlevel(char *file, unsigned flags)

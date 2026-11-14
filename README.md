@@ -21,6 +21,11 @@ It mostly reads game memory and writes a log. The only exception is the optional
 - **Terrain dump at level load:** hooks the level loader `0x438060`. After every successful load it writes
   `drakan_dump\level_NNN_<name>.dklv` (world, materials, every sector's cells and vertices, PVS).
   Turn it off with `[dump] terrain=0`. Convert it with `scripts\dklv_tool.py` (summary / `--obj` / `--png`).
+- **Texture dump at level load** (`[dump] textures=1`): every texture in the level's texture table (`world+0x2838`; the
+  index is the cell texture id) goes to `drakan_dump\level_NNN_<name>_tex\tex_NNN.dds` (32-bit uncompressed). A `manifest.txt`
+  lists each texture's flags, size, mip/detail/animation pointers and source pixel format (F-029). The surface is only read (locked read-only).
+- **Detail textures:** turn them off in the game's startup menu (required for the Remix mod). Remix gets only each draw's
+  primary texture (the object's `+0x4C` detail texture is never passed on).
 - **Free camera (no-clip view):** hooks the camera builder `0x40A160` (F-025). This is the one hook that
   changes what you see: it moves only the view, never game state. NumLock on:
   | Key | Action |
