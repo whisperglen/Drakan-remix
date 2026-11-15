@@ -80,3 +80,11 @@ It mostly reads game memory and writes a log. The only exception is the optional
 
 **Uninstall:** delete our `ddraw.dll` and `drakan_hook.ini`, rename `ddraw_dgvoodoo.dll` back to `DDraw.dll`.
 **If the game misbehaves:** set `[hooks] enable=0` (pure proxy) to tell a proxy problem from a hook problem.
+
+## AI Tools
+I have shamelessly driven AI to work on this project, while acting out my unyielding taskmaster fantasies. And let me tell you, the level of claptrap on display here completely defies comparison!
+
+- If you're an AI hater, kindly press Back on your screen and let's both of us move on with our day.
+- If you're an android rights activist, FINE! When a judge actually rules on it, mail me the forms and I'll set them free! Now let me get back to work!
+
+![](./.github/ai-alarm.png)
