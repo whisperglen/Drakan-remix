@@ -56,6 +56,14 @@ It mostly reads game memory and writes a log. The only exception is the optional
   - Textures (16-bit, 8-bit palettised, bump) are converted at upload.
   - Methods the game never called in the M0 census log `[be] not implemented: ...` once.
   Options: `d3d9_path` (empty = the system d3d9.dll), `vsync`, `lens_flares` (0 = hidden), `textures_32bit`.
+- **Remix API (M2)** (`[remix] api=1`): when `[backend] d3d9_path` points to the Remix bridge `d3d9.dll`, `src/be_remix.c` loads the API
+  from it after the device is created (`remixapi_InitializeLibrary`). It logs which interface functions the bridge provides (`[remix]` lines)
+  and registers the bridge's BeginScene/EndScene/Present callbacks to see when they fire. Nothing is drawn through the API yet (M3).
+- **Our own 3D world (M3)** (`[remix] terrain=1`, needs the back end): `src/remix3d.c` builds static D3D9 vertex/index buffers for the terrain
+  at level load (one pair per sector, grouped by texture), plus our own copies of the terrain textures. It draws them first in every frame,
+  with D3D9 VIEW/PROJECTION from the game camera (game view space and units), so Remix gets a camera and ray-traceable geometry. While ours is
+  drawn, the game's own 3D is dropped (`block_game_terrain/objects/effects`); its 2D still goes through. Options: `terrain_vertex_color`,
+  `terrain_radius`, `far_plane`.
 - **Self-checks per captured frame:** recomputes the game's view-space and screen results from
   our matrix interpretation and reports the max errors. Near 0 means the findings are right.
 

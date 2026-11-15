@@ -13,6 +13,7 @@
 #include <math.h>
 #include <string.h>
 #include "hook.h"
+#include "be.h"
 
 /* ---- addresses (Drakan.exe, image base 0x400000) ---------------------------------- */
 #define A_FRAME        0x0043BEB0   /* void frame(void)                                  */
@@ -355,6 +356,7 @@ static int __cdecl H_loadlevel(char *file, unsigned flags)
     int r = O_loadlevel(file, flags);
     hook_log("[level] load_level(\"%s\", 0x%X) = %d\n", file ? file : "(null)", flags, r);
     if (r == 0 && hook_ini_int("dump", "terrain", 1)) dump_world(file);
+    if (r == 0) r3d_level_loaded((void *)G_WORLD);   /* M3: our own terrain buffers for Remix */
     census_report("level loaded");
     hook_log_flush();
     return r;
@@ -395,5 +397,6 @@ int drakan_install_hooks(void)
     if ((O_loadlevel = (loadlevel_fn)detour_install(A_LOADLEVEL, b_load, sizeof(b_load), H_loadlevel))) n++;
     n += freecam_install();
     n += surfspy_install();
+    n += r3d_install();                 /* M3: after freecam (shares its object-draw hook) */
     return n;
 }

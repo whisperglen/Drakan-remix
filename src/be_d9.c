@@ -24,6 +24,9 @@ static IDirect3D9       *g_d3d;
 static IDirect3DDevice9 *g_dev;
 static HWND   g_hwnd;
 static int    g_w, g_h, g_in_scene, g_lost, g_fullscreen;
+static HMODULE g_d9mod;
+static int    g_world_drawn;          /* our 3D already drawn in this frame */
+volatile LONG g_d9_block;
 static LONG   g_saved_style, g_saved_exstyle;
 static RECT   g_saved_rect;
 
@@ -125,6 +128,7 @@ int d9_device(HWND hwnd, int w, int h)
         /* [backend] d3d9_path: empty = the system d3d9.dll; otherwise relative to the game folder or absolute */
         hook_ini_path("backend", "d3d9_path", "d3d9.dll", path, sizeof(path));
         m = LoadLibraryA(path);
+        g_d9mod = m;
         create = m ? (create9_fn)GetProcAddress(m, "Direct3DCreate9") : NULL;
         g_d3d = create ? create(D3D_SDK_VERSION) : NULL;
         hook_log("[d9] d3d9 = %s -> %s\n", path, g_d3d ? "ok" : "FAILED");
@@ -142,6 +146,7 @@ int d9_device(HWND hwnd, int w, int h)
     hook_log_flush();
     if (FAILED(hr)) { g_dev = NULL; return 0; }
     apply_cache();
+    rx_init(g_d9mod);                  /* M2: Remix API, only if this is the bridge */
     return 1;
 }
 
@@ -182,14 +187,17 @@ static int check_lost(void)
 void d9_begin_scene(void)
 {
     if (check_lost() || g_in_scene) return;
-    if (SUCCEEDED(IDirect3DDevice9_BeginScene(g_dev))) g_in_scene = 1;
+    if (SUCCEEDED(IDirect3DDevice9_BeginScene(g_dev))) {
+        g_in_scene = 1; rx_note_frame_event("BeginScene");
+        if (!g_world_drawn) { g_world_drawn = 1; r3d_on_begin_scene(); }   /* M3: our 3D before any game draw */
+    }
 }
 
 void d9_end_scene(void)
 {
     if (!g_dev) return;
     flush();
-    if (g_in_scene) { IDirect3DDevice9_EndScene(g_dev); g_in_scene = 0; }
+    if (g_in_scene) { IDirect3DDevice9_EndScene(g_dev); g_in_scene = 0; rx_note_frame_event("EndScene"); }
 }
 
 void d9_present(void)
@@ -209,7 +217,21 @@ void d9_present(void)
             pdst = &dst;
         }
     }
+    rx_note_frame_event("Present (calling)");
+    rx_frame_tick(g_hwnd);
+    g_world_drawn = 0;
+    {   /* heartbeat: shows in the log whether frames keep coming (e.g. behind a frozen-looking window) */
+        static DWORD frames, t0;
+        DWORD now = GetTickCount();
+        if (!t0) t0 = now;
+        if (++frames % 300 == 0) {
+            hook_log("[d9] frame %u, %.1f s, window %s%s\n", frames, (now - t0) / 1000.0, IsWindowVisible(g_hwnd) ? "visible" : "hidden",
+                     GetForegroundWindow() == g_hwnd ? ", focused" : ", not focused");
+            hook_log_flush();
+        }
+    }
     hr = IDirect3DDevice9_Present(g_dev, NULL, pdst, NULL, NULL);
+    rx_note_frame_event("Present");
     if (hr == D3DERR_DEVICELOST) g_lost = 1;
 }
 
@@ -304,7 +326,7 @@ void d9_draw(DWORD prim, DWORD fvf, const void *verts, DWORD n)
 {
     DWORD stride = fvf_stride(fvf), i;
     const BYTE *v = (const BYTE *)verts;
-    if (!g_dev || g_lost || !verts || n < 3) return;
+    if (!g_dev || g_lost || !verts || n < 3 || g_d9_block > 0) return;
     if (!g_in_scene) d9_begin_scene();
     if (prim != D3DPT_TRIANGLEFAN) {              /* not seen in Drakan (F-036): draw directly */
         DWORD tris = prim == D3DPT_TRIANGLELIST ? n / 3 : prim == D3DPT_TRIANGLESTRIP ? n - 2 : 0;
@@ -401,4 +423,102 @@ int d9_write_back(const DWORD *in, int w, int h)
     if (bb) IDirect3DSurface9_Release(bb);
     if (was) d9_begin_scene();
     return ok;
+}
+
+/* ---- M3: our own world geometry (static buffers), drawn first in the frame ---------------------------- */
+void *d9_vb_create(const void *data, DWORD bytes)
+{
+    IDirect3DVertexBuffer9 *vb = NULL;
+    void *p;
+    if (!g_dev || !bytes) return NULL;
+    if (FAILED(IDirect3DDevice9_CreateVertexBuffer(g_dev, bytes, D3DUSAGE_WRITEONLY, 0, D3DPOOL_MANAGED, &vb, NULL))) return NULL;
+    if (SUCCEEDED(IDirect3DVertexBuffer9_Lock(vb, 0, bytes, &p, 0))) { memcpy(p, data, bytes); IDirect3DVertexBuffer9_Unlock(vb); }
+    return vb;
+}
+
+void *d9_ib_create(const DWORD *idx, DWORD count)
+{
+    IDirect3DIndexBuffer9 *ib = NULL;
+    void *p;
+    if (!g_dev || !count) return NULL;
+    if (FAILED(IDirect3DDevice9_CreateIndexBuffer(g_dev, count * 4, D3DUSAGE_WRITEONLY, D3DFMT_INDEX32, D3DPOOL_MANAGED, &ib, NULL))) return NULL;
+    if (SUCCEEDED(IDirect3DIndexBuffer9_Lock(ib, 0, count * 4, &p, 0))) { memcpy(p, idx, count * 4); IDirect3DIndexBuffer9_Unlock(ib); }
+    return ib;
+}
+
+void d9_buf_release(void *buf) { if (buf) IUnknown_Release((IUnknown *)buf); }
+
+int d9_world_begin(const float view[16], const float proj[16])
+{
+    D3DMATRIX id;
+    int i;
+    if (!g_dev || g_lost || !g_in_scene) return 0;
+    flush();
+    memset(&id, 0, sizeof(id));
+    id._11 = id._22 = id._33 = id._44 = 1.0f;
+    IDirect3DDevice9_SetTransform(g_dev, D3DTS_WORLD, &id);
+    IDirect3DDevice9_SetTransform(g_dev, D3DTS_VIEW, (const D3DMATRIX *)view);
+    IDirect3DDevice9_SetTransform(g_dev, D3DTS_PROJECTION, (const D3DMATRIX *)proj);
+    IDirect3DDevice9_SetFVF(g_dev, D3DFVF_XYZ | D3DFVF_DIFFUSE | D3DFVF_TEX1);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_ZENABLE, D3DZB_TRUE);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_ZWRITEENABLE, TRUE);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_ZFUNC, D3DCMP_LESSEQUAL);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_CULLMODE, D3DCULL_NONE);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_ALPHABLENDENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_ALPHATESTENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_FOGENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_LIGHTING, FALSE);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_SPECULARENABLE, FALSE);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_DEPTHBIAS, 0);
+    IDirect3DDevice9_SetTextureStageState(g_dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE);
+    IDirect3DDevice9_SetTextureStageState(g_dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);
+    IDirect3DDevice9_SetTextureStageState(g_dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    IDirect3DDevice9_SetTextureStageState(g_dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    IDirect3DDevice9_SetTextureStageState(g_dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+    IDirect3DDevice9_SetTextureStageState(g_dev, 0, D3DTSS_TEXCOORDINDEX, 0);
+    for (i = 1; i < 4; i++) {
+        IDirect3DDevice9_SetTextureStageState(g_dev, i, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        IDirect3DDevice9_SetTextureStageState(g_dev, i, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+        IDirect3DDevice9_SetTexture(g_dev, i, NULL);
+    }
+    IDirect3DDevice9_SetSamplerState(g_dev, 0, D3DSAMP_ADDRESSU, D3DTADDRESS_WRAP);
+    IDirect3DDevice9_SetSamplerState(g_dev, 0, D3DSAMP_ADDRESSV, D3DTADDRESS_WRAP);
+    IDirect3DDevice9_SetSamplerState(g_dev, 0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+    IDirect3DDevice9_SetSamplerState(g_dev, 0, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+    IDirect3DDevice9_SetSamplerState(g_dev, 0, D3DSAMP_MIPFILTER, D3DTEXF_NONE);
+    return 1;
+}
+
+void d9_world_draw(void *vb, DWORD stride, DWORD nverts, void *ib, DWORD first, DWORD tris, void *tex)
+{
+    if (!g_dev || !vb || !ib || !tris) return;
+    IDirect3DDevice9_SetStreamSource(g_dev, 0, (IDirect3DVertexBuffer9 *)vb, 0, stride);
+    IDirect3DDevice9_SetIndices(g_dev, (IDirect3DIndexBuffer9 *)ib);
+    IDirect3DDevice9_SetTexture(g_dev, 0, (IDirect3DBaseTexture9 *)tex);
+    IDirect3DDevice9_DrawIndexedPrimitive(g_dev, D3DPT_TRIANGLELIST, 0, 0, nverts, first, tris);
+}
+
+void d9_world_end(void)
+{
+    int i;
+    if (!g_dev) return;
+    IDirect3DDevice9_SetStreamSource(g_dev, 0, NULL, 0, 0);
+    IDirect3DDevice9_SetIndices(g_dev, NULL);
+    /* the game's draws only use the cached states: put all of them back (textures included) */
+    for (i = 1; i < 4; i++) {
+        IDirect3DDevice9_SetTextureStageState(g_dev, i, D3DTSS_COLOROP, g_tss_set[i][D3DTSS_COLOROP] ? g_tss[i][D3DTSS_COLOROP] : D3DTOP_DISABLE);
+        IDirect3DDevice9_SetTextureStageState(g_dev, i, D3DTSS_ALPHAOP, g_tss_set[i][D3DTSS_ALPHAOP] ? g_tss[i][D3DTSS_ALPHAOP] : D3DTOP_DISABLE);
+    }
+    apply_cache();
+    g_batch_fvf = 0;   /* the next flush sets the game's FVF again */
+}
+
+void d9_world_alpha(int on)
+{
+    if (!g_dev) return;
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_ALPHABLENDENABLE, on ? TRUE : FALSE);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    IDirect3DDevice9_SetRenderState(g_dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    IDirect3DDevice9_SetTextureStageState(g_dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE);
+    IDirect3DDevice9_SetTextureStageState(g_dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
 }

@@ -1122,3 +1122,23 @@ HRESULT be_DirectDrawEnumerateA(void *cb, void *ctx)
     ((LPDDENUMCALLBACKA)cb)(NULL, "Primary Display Driver", "display", ctx);
     return DD_OK;
 }
+
+/* M3: our own D3D9 copy of a game texture, from its system-memory surface (texture object +0x44).
+ * Only works with our back end (the surface must be one of our Surf objects). */
+void *be_texture_from_surface(void *dds4)
+{
+    Surf *s = (Surf *)dds4;
+    DWORD *tmp;
+    void *t;
+    int w, h;
+    if (!be_enabled() || !s || s->vtbl != vt_surf || !s->mem) return NULL;
+    w = s->desc.dwWidth; h = s->desc.dwHeight;
+    if (w <= 0 || h <= 0 || w > 4096 || h > 4096) return NULL;
+    tmp = (DWORD *)malloc(w * h * 4);
+    if (!tmp) return NULL;
+    to_argb(s, s->pal, tmp);
+    t = d9_tex_create(w, h, 0);
+    if (t) d9_tex_update(t, tmp, w * 4, w, h, 4);
+    free(tmp);
+    return t;
+}

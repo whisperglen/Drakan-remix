@@ -37,3 +37,31 @@ void  d9_tex_release(void *tex);
 /* back buffer <-> memory (X8R8G8B8 rows, w*4 pitch) for screenshots and the saved menu background */
 int   d9_read_back(DWORD *out, int w, int h);
 int   d9_write_back(const DWORD *in, int w, int h);
+
+/* be_remix.c (M2): Remix API from the bridge d3d9.dll */
+void        rx_init(void *d3d9_module);           /* after the D3D9 device exists; no-op without the bridge */
+int         rx_ready(void);
+const void *rx_api(void);                         /* remixapi_Interface *, or NULL */
+void        rx_note_frame_event(const char *what);
+
+/* be_d9.c: M3 world drawing (our own static buffers, drawn before any game draw; see remix3d.c) */
+extern volatile LONG g_d9_block;                   /* > 0: drop the game's draws (its 3D is replaced) */
+void *d9_vb_create(const void *data, DWORD bytes);
+void *d9_ib_create(const DWORD *idx, DWORD count);
+void  d9_buf_release(void *buf);
+int   d9_world_begin(const float view[16], const float proj[16]);   /* 0 = no device / lost */
+void  d9_world_draw(void *vb, DWORD stride, DWORD nverts, void *ib, DWORD first, DWORD tris, void *tex);
+void  d9_world_end(void);
+
+/* be_ddraw.c: a D3D9 texture (A8R8G8B8) made from one of the game's DirectDraw surfaces (our fake one) */
+void *be_texture_from_surface(void *dds4);
+
+/* remix3d.c (M3) */
+int   r3d_install(void);                           /* hooks; called from drakan_install_hooks */
+void  r3d_level_loaded(void *world);               /* build our terrain buffers + textures */
+void  r3d_on_begin_scene(void);                    /* called by be_d9 right after BeginScene, once per frame */
+LONG  r3d_enter(int what);                         /* what: 1 objects; returns 1 if blocking was raised */
+void  r3d_leave(LONG raised);
+
+void  d9_world_alpha(int on);                      /* M3: alpha-blended pass (z-write stays on, so Remix doesn't see UI) */
+void  rx_frame_tick(HWND hwnd);                    /* be_remix.c: per Present; re-activates the game after the Remix menu closes */

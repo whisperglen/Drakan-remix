@@ -16,6 +16,7 @@
  */
 #include <math.h>
 #include "hook.h"
+#include "be.h"
 
 #define A_CAMBUILD 0x0040A160
 #define G_CAMERA   0x004879B0
@@ -120,7 +121,17 @@ static void __fastcall H_cambuild(void *cam, void *edx, const float *xf)
  * leave it, nothing covers the background (hall of mirrors). Any meshed object whose x,z is
  * exactly the game camera's is drawn shifted by (free - game) for this call only; its stored
  * position is restored right after, so game state is untouched. */
+static int draw_obj_moved(BYTE *obj, void *edx, float *camera);
 static int __fastcall H_drawobj(BYTE *obj, void *edx, float *camera)
+{
+    int r;
+    LONG blk = r3d_enter(1);                        /* M3: the game's objects are replaced (remix3d.c) */
+    r = draw_obj_moved(obj, edx, camera);
+    r3d_leave(blk);
+    return r;
+}
+
+static int draw_obj_moved(BYTE *obj, void *edx, float *camera)
 {
     float save[3], *pos;
     int r;
@@ -149,6 +160,8 @@ static int __fastcall H_drawobj(BYTE *obj, void *edx, float *camera)
     return r;
 }
 
+int freecam_drawobj_hooked(void) { return O_drawobj != NULL; }
+
 int freecam_install(void)
 {
     static const BYTE b_cam[] = { 0x8B, 0x44, 0x24, 0x04, 0x53, 0x55 };  /* mov eax,[esp+4]; push ebx; push ebp */
@@ -168,7 +181,7 @@ int freecam_install(void)
     k_logpos  = hook_ini_int("freecam", "key_logpos", VK_F11);
     O_cambuild = (cambuild_fn)detour_install(A_CAMBUILD, b_cam, sizeof(b_cam), H_cambuild);
     cfg_sky = hook_ini_int("freecam", "move_sky", 1);
-    if (cfg_sky) {
+    {   /* always hooked while freecam is on: move_sky uses it, and so does M3's object blocking (remix3d.c) */
         static const BYTE b_draw[] = { 0x81, 0xEC, 0xC8, 0x00, 0x00, 0x00 };   /* sub esp,0C8 */
         O_drawobj = (drawobj_fn)detour_install(0x00446E70, b_draw, sizeof(b_draw), H_drawobj);
         if (!O_drawobj) cfg_sky = 0;
