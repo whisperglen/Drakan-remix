@@ -125,7 +125,9 @@ static int draw_obj_moved(BYTE *obj, void *edx, float *camera);
 static int __fastcall H_drawobj(BYTE *obj, void *edx, float *camera)
 {
     int r;
-    LONG blk = r3d_enter(1);                        /* M3: the game's objects are replaced (remix3d.c) */
+    LONG blk;
+    meshdump_object(obj);                           /* M4 step 1: [dump] meshes */
+    blk = r3d_enter(1);                             /* M3: the game's objects are replaced (remix3d.c) */
     r = draw_obj_moved(obj, edx, camera);
     r3d_leave(blk);
     return r;

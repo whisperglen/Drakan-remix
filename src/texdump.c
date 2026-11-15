@@ -160,3 +160,21 @@ void texdump_world(BYTE *world, const char *dir)
     hook_log("[tex] %u of %u textures written to %s\n", ok, count, dir);
     hook_log_flush();
 }
+
+/* one texture object -> DDS (used by meshdump.c); 1 = written */
+int texdump_texture(BYTE *t, const char *path)
+{
+    IDirectDrawSurface4 *s;
+    DWORD *px;
+    int w = 0, h = 0, ok;
+    DDPIXELFORMAT pf;
+    const char *why = "";
+    __try { s = (IDirectDrawSurface4 *)P(t, 0x44); } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+    if (!s) return 0;
+    memset(&pf, 0, sizeof(pf));
+    px = read_surface(s, &w, &h, &pf, &why);
+    if (!px) return 0;
+    ok = write_dds(path, w, h, px);
+    GlobalFree(px);
+    return ok;
+}

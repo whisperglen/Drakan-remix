@@ -61,7 +61,7 @@ static thisfn1 O_fx2;
 static void __fastcall H_world(void *s, void *e) { LONG r = r3d_enter(2); O_world(s, e); r3d_leave(r); }
 typedef int (__fastcall *objfn)(void *obj, void *edx, float *camera);
 static objfn O_obj;
-static int __fastcall H_obj(void *o, void *e, float *cam) { LONG r = r3d_enter(1); int v = O_obj(o, e, cam); r3d_leave(r); return v; }
+static int __fastcall H_obj(void *o, void *e, float *cam) { LONG r; meshdump_object((BYTE *)o); r = r3d_enter(1); int v = O_obj(o, e, cam); r3d_leave(r); return v; }
 static void __fastcall H_fx1(void *s, void *e)   { LONG r = r3d_enter(3); O_fx1(s, e); r3d_leave(r); }
 static void __fastcall H_fx2(void *s, void *e, int a) { LONG r = r3d_enter(3); O_fx2(s, e, a); r3d_leave(r); }
 /* the flush also runs elsewhere (end of frame, 2D); only the one in the frame function, right after the

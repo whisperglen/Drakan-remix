@@ -20,6 +20,11 @@ int     drakan_install_hooks(void);   /* returns number of hooks installed */
 
 /* texdump.c: write world+0x2838 textures as DDS + manifest.txt into dir */
 void    texdump_world(BYTE *world, const char *dir);
+int     texdump_texture(BYTE *tex, const char *path);   /* one texture object -> DDS */
+
+/* meshdump.c (M4 step 1): write each drawn model once as OBJ + textures; called from the object-draw hooks */
+void    meshdump_object(BYTE *obj);
+void    meshdump_level_loaded(const char *level_file);
 
 /* freecam.c (called from drakan_install_hooks after the host check) */
 int     freecam_install(void);
