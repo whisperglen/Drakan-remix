@@ -74,7 +74,10 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
         else
             hook_log("[main] hooks disabled in ini (proxy only)\n");
         hook_log_flush();
-    } else if (reason == DLL_PROCESS_DETACH && reserved == NULL) {
+    } else if (reason == DLL_PROCESS_DETACH) {
+        census_report(reserved ? "process exit" : "unload");
+        hook_log_flush();
+        if (reserved) return TRUE;      /* process exit: the CRT closes the file itself */
         hook_log("[main] unload\n");
         if (g_log) fclose(g_log);
         g_log = NULL;

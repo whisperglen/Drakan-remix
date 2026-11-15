@@ -44,6 +44,11 @@ It mostly reads game memory and writes a log. The only exception is the optional
 - **Surface spy** (`[surfspy] enable=1`): logs each distinct caller of the game's surface wrapper `Blt` `0x439850`, `Lock` `0x439930`
   and `Flip` `0x4398E0` (`[surf]` lines), with the surface size and type. It shows whether anything draws by writing pixels directly
   instead of through the 3D device (R.10). Log only.
+- **COM census (M0)** (`[census] enable=1`): when `DirectDrawCreate` returns, the real DirectDraw/Direct3D objects' method tables
+  are patched in place (and so are those of every object obtained from them). Every call is counted per method and per calling module,
+  and key calls also log their arguments: surface descriptions, display modes, texture/z formats, render and texture-stage states,
+  primitive types, Lock/Blt flags. `[com] first ...` lines appear as calls happen. A full table is written at each level load and at exit.
+  Log only: every call still goes to the original method.
 - **Self-checks per captured frame:** recomputes the game's view-space and screen results from
   our matrix interpretation and reports the max errors. Near 0 means the findings are right.
 

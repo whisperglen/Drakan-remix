@@ -25,3 +25,7 @@ int     freecam_install(void);
 
 /* surfspy.c: log callers of the surface wrapper Blt/Lock/Flip (who draws outside the 3D device) */
 int     surfspy_install(void);
+
+/* comcensus.c (M0): patch the real DirectDraw/Direct3D vtables and count every method call (log only) */
+void    census_on_directdraw(void *dd);   /* called by proxy.c with the object DirectDrawCreate returned */
+void    census_report(const char *why);   /* full table of counts into the log */

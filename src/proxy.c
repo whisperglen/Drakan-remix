@@ -57,6 +57,8 @@ static void __stdcall ensure_chain(void)
     InterlockedExchange(&g_loaded, 1);
 }
 
+/* DirectDrawCreate is a real function, so the M0 census (comcensus.c) can see the object it returns.
+ * Every other export is a naked forwarding stub. */
 #define X(n) \
     __declspec(naked) void s_##n(void) { \
         __asm pushad \
@@ -64,5 +66,19 @@ static void __stdcall ensure_chain(void)
         __asm popad \
         __asm jmp dword ptr [g_procs + E_##n * 4] \
     }
-EXPORTS(X)
+X(AcquireDDThreadLock) X(CompleteCreateSysmemSurface) X(D3DParseUnknownCommand)
+X(DDInternalLock) X(DDInternalUnlock) X(DirectDrawCreateClipper) X(DirectDrawCreateEx)
+X(DirectDrawEnumerateA) X(DirectDrawEnumerateExA) X(DirectDrawEnumerateExW)
+X(DirectDrawEnumerateW) X(DllCanUnloadNow) X(DllGetClassObject) X(ReleaseDDThreadLock)
 #undef X
+
+HRESULT WINAPI s_DirectDrawCreate(GUID *guid, void **out, void *outer)
+{
+    typedef HRESULT (WINAPI *ddc_fn)(GUID *, void **, void *);
+    HRESULT hr;
+    ensure_chain();
+    hr = ((ddc_fn)g_procs[E_DirectDrawCreate])(guid, out, outer);
+    hook_log("[proxy] DirectDrawCreate -> hr %08X %p\n", (DWORD)hr, out ? *out : NULL);
+    if (SUCCEEDED(hr) && out && *out) census_on_directdraw(*out);
+    return hr;
+}

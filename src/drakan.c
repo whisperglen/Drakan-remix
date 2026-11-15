@@ -355,6 +355,7 @@ static int __cdecl H_loadlevel(char *file, unsigned flags)
     int r = O_loadlevel(file, flags);
     hook_log("[level] load_level(\"%s\", 0x%X) = %d\n", file ? file : "(null)", flags, r);
     if (r == 0 && hook_ini_int("dump", "terrain", 1)) dump_world(file);
+    census_report("level loaded");
     hook_log_flush();
     return r;
 }
