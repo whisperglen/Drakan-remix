@@ -49,6 +49,13 @@ It mostly reads game memory and writes a log. The only exception is the optional
   and key calls also log their arguments: surface descriptions, display modes, texture/z formats, render and texture-stage states,
   primitive types, Lock/Blt flags. `[com] first ...` lines appear as calls happen. A full table is written at each level load and at exit.
   Log only: every call still goes to the original method.
+- **D3D9 back end (M1)** (`[backend] d3d9=1`, default 0): our own DirectDraw 6 / Direct3D 3 implementation on Direct3D 9
+  (`src/be_ddraw.c` = the fake DX6 objects, `src/be_d9.c` = the D3D9 side). It replaces dgVoodoo for rendering:
+  - The game's fullscreen becomes a borderless window, letterboxed.
+  - Triangle fans are merged into triangle lists.
+  - Textures (16-bit, 8-bit palettised, bump) are converted at upload.
+  - Methods the game never called in the M0 census log `[be] not implemented: ...` once.
+  Options: `d3d9_path` (empty = the system d3d9.dll), `vsync`, `lens_flares` (0 = hidden), `textures_32bit`.
 - **Self-checks per captured frame:** recomputes the game's view-space and screen results from
   our matrix interpretation and reports the max errors. Near 0 means the findings are right.
 

@@ -8,6 +8,7 @@
  */
 #include <windows.h>
 #include "hook.h"
+#include "be.h"
 
 /* Keep in sync with ddraw.def: only exports common to dgVoodoo2 and Windows ddraw. */
 #define EXPORTS(X) \
@@ -68,7 +69,7 @@ static void __stdcall ensure_chain(void)
     }
 X(AcquireDDThreadLock) X(CompleteCreateSysmemSurface) X(D3DParseUnknownCommand)
 X(DDInternalLock) X(DDInternalUnlock) X(DirectDrawCreateClipper) X(DirectDrawCreateEx)
-X(DirectDrawEnumerateA) X(DirectDrawEnumerateExA) X(DirectDrawEnumerateExW)
+X(DirectDrawEnumerateExA) X(DirectDrawEnumerateExW)
 X(DirectDrawEnumerateW) X(DllCanUnloadNow) X(DllGetClassObject) X(ReleaseDDThreadLock)
 #undef X
 
@@ -76,9 +77,22 @@ HRESULT WINAPI s_DirectDrawCreate(GUID *guid, void **out, void *outer)
 {
     typedef HRESULT (WINAPI *ddc_fn)(GUID *, void **, void *);
     HRESULT hr;
+    if (be_enabled()) {                      /* M1: our own D3D9 back end (be_ddraw.c) */
+        hr = be_DirectDrawCreate(guid, out, outer);
+        hook_log("[proxy] DirectDrawCreate (D3D9 back end) -> hr %08X %p\n", (DWORD)hr, out ? *out : NULL);
+        return hr;
+    }
     ensure_chain();
     hr = ((ddc_fn)g_procs[E_DirectDrawCreate])(guid, out, outer);
     hook_log("[proxy] DirectDrawCreate -> hr %08X %p\n", (DWORD)hr, out ? *out : NULL);
     if (SUCCEEDED(hr) && out && *out) census_on_directdraw(*out);
     return hr;
+}
+
+HRESULT WINAPI s_DirectDrawEnumerateA(void *cb, void *ctx)
+{
+    typedef HRESULT (WINAPI *dde_fn)(void *, void *);
+    if (be_enabled()) return be_DirectDrawEnumerateA(cb, ctx);
+    ensure_chain();
+    return ((dde_fn)g_procs[E_DirectDrawEnumerateA])(cb, ctx);
 }

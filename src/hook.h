@@ -4,6 +4,7 @@
 /* main.c */
 HMODULE hook_self_module(void);
 void    hook_chain_path(char *out, DWORD size);
+void    hook_ini_path(const char *section, const char *key, const char *sysname, char *out, DWORD size);
 void    hook_log(const char *fmt, ...);
 void    hook_log_flush(void);
 int     hook_ini_int(const char *section, const char *key, int def);

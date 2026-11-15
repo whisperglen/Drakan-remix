@@ -18,19 +18,23 @@ int hook_ini_int(const char *section, const char *key, int def)
     return (int)GetPrivateProfileIntA(section, key, def, g_ini);
 }
 
-void hook_chain_path(char *out, DWORD size)
+/* ini value naming a DLL: empty = <system32>\sysname; absolute; or relative to the game folder */
+void hook_ini_path(const char *section, const char *key, const char *sysname, char *out, DWORD size)
 {
     char v[MAX_PATH];
-    GetPrivateProfileStringA("chain", "ddraw", "", v, sizeof(v), g_ini);
-    if (v[0] == 0) {                                   /* default: the system ddraw */
+    GetPrivateProfileStringA(section, key, "", v, sizeof(v), g_ini);
+    if (v[0] == 0) {
         GetSystemDirectoryA(out, size);
-        strncat(out, "\\ddraw.dll", size - strlen(out) - 1);
-    } else if (v[1] == ':' || v[0] == '\\') {          /* absolute */
+        strncat(out, "\\", size - strlen(out) - 1);
+        strncat(out, sysname, size - strlen(out) - 1);
+    } else if (v[1] == ':' || v[0] == '\\') {
         strncpy(out, v, size); out[size - 1] = 0;
-    } else {                                           /* relative to the game folder */
+    } else {
         _snprintf(out, size, "%s%s", g_dir, v); out[size - 1] = 0;
     }
 }
+
+void hook_chain_path(char *out, DWORD size) { hook_ini_path("chain", "ddraw", "ddraw.dll", out, size); }
 
 void hook_log(const char *fmt, ...)
 {
